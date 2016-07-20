@@ -28,7 +28,7 @@
 #  - ownCloud 8.1.3
 #
 # Limitations:
-#  - it is really really slow (the largest bottleneck is in awk part of the script)
+#  - requires dd, sed and openssl 
 #
 #
 # === Usage notes
@@ -70,6 +70,61 @@
 
 
 # Beginning of a script
+
+function readFileCipher() {
+  read ciper <<<`sed -r 's/^HBEGIN:(.+):HEND-*//' < $file
+}
+function splitPrivKeyFile () {
+  
+  # read payload iv <<<`echo $CHUNK | sed -r 's/(.*)00iv00(.{16})xx/\1 \2/'`
+  # 
+  # !!!!
+  # encPrivKeyContentsALL="$(cat "$userPrivKeyPath")"
+  # plainPrivKeyIV="$( sed -r 's/^HBEGIN.*00iv00//;s/xx$//' <(echo "${encPrivKeyContentsALL}") )"
+  # encPrivKeyContentsBASE64="$( sed -r 's/^HBEGIN:.+:HEND-*//;s/(00iv00.*)?00iv00.*{16}xx/\1/' <(echo "${encPrivKeyContentsALL}") )"
+  
+  }
+function decodeBlock () {
+  # we need the ciper-strength, hex-key and iv
+  # oc supports only aes aes-256-cfb and aes-128-cfb
+  # the payload should still come from stdin.
+  #pipe to this function!
+  
+  # decode chunk 
+  #   openssl enc -AES-{128,256}-CFB -d -nosalt -base64 -A -K $decFileKeyContentHEX -iv $iv -in <(echo "$payload")
+  # decode key , !!!strip the subshell!
+  #   openssl enc -AES-{128,256}-CFB -d -nosalt -base64 -A -K $userLoginPassHEX -iv $plainPrivKeyIVHEX -in <(echo $encPrivKeyContentsBASE64) )
+  
+  # populate args
+  for opt in len key iv ; do
+    # don't know, if this works...
+    $opt=$1; shift
+  done
+  
+  openssl enc -AES-${len}-CFB -d -nosalt -base64 -A -K ${key} -iv ${iv} -in
+  
+  #chunkSize=8192
+  #while read -d '' -n $chunkSize CHUNK || [ ! -z "$CHUNK" ]; do
+    #split chunk into payload an iv string (strip padding from iv)          
+    #read payload iv <<<`echo $CHUNK | sed -r 's/(.*)00iv00(.{16})xx/\1 \2/'`
+    #CHUNK=
+    #if [ -z $CHUNK ]; then break; fi
+    # convert base64 iv into hex
+    #iv=$(echo -n "$iv" | od -An -tx1 | tr -dc '[:xdigit:]' )
+    # decode chunk
+    #openssl enc -AES-256-CFB -d -nosalt -base64 -A -K $decFileKeyContentHEX -iv $iv -in <(echo "$payload")
+    #done <<<`sed -r 's/^HBEGIN:.+:HEND-*//' <"${USER}/$encFilePath"` # pipe the encrypted file without head into the loop
+    #done < <(dd bs=$chunkSize skip=1 if="${USER}/$encFilePath")
+  # --- Decrypt the file ---
+  
+  
+}
+
+function mkHex () {
+  # iv=$(echo -n "$iv" | od -An -tx1 | tr -dc '[:xdigit:]' )
+  # userLoginPassHEX=$(echo -n $userLoginPass |od -An -tx1 |tr -dc '[:xdigit:]')
+  # plainPrivKeyIVHEX=$(echo -n $plainPrivKeyIV |od -An -tx1 |tr -dc '[:xdigit:]')
+}
 
 #
 # Get User Private Key
@@ -130,6 +185,11 @@ function decryptFile() {
   # --- Decrypt the file ---
   # OC writes the encrypted file in 8K chunks, each containing it's own iv in the end
   chunkSize=8192
+  
+  # at this point we should read the head of the file (first chunk that is skipped in the loop)
+  # and detect the used this can currently be "AES-{128,256}-CFB"
+  # 
+  
   while read -d '' -n $chunkSize CHUNK || [ ! -z "$CHUNK" ]; do
     #split chunk into payload an iv string (strip padding from iv)          
     read payload iv <<<`echo $CHUNK | sed -r 's/(.*)00iv00(.{16})xx/\1 \2/'`
