@@ -95,6 +95,19 @@ function decryptUserPrivateKey() {
   openssl enc -AES-256-CFB -d -nosalt -base64 -A -K "${userLoginPassHEX}" -iv "${plainPrivKeyIVHEX}" -in <(echo "${encPrivKeyContentsBASE64}")
 }
 
+function decrypt_admin_recovery_key() {
+  recovery_key_password="${1}"
+  recovery_key_file=$(find files_encryption/OC_DEFAULT_MODULE -iname "recoveryKey_*.privateKey" |head -n 1)
+
+  encPrivKeyContentsALL="$(cat "${recovery_key_file}")"
+  encPrivKeyContentsBASE64="$( sed -r 's/^HBEGIN:.+:HEND-*//;s/(00iv00.*)?00iv00.*{16}xx/\1/' <(echo "${encPrivKeyContentsALL}") )"
+  plainPrivKeyIV="$( sed -r 's/^HBEGIN.*00iv00//;s/xx$//' <(echo "${encPrivKeyContentsALL}") )"
+  recovery_key_password_hex=$(echo -n "${recovery_key_password}" |od -An -tx1 |tr -dc '[:xdigit:]')
+  plainPrivKeyIVHEX=$(echo -n "${plainPrivKeyIV}" |od -An -tx1 |tr -dc '[:xdigit:]')
+
+  openssl enc -AES-256-CFB -d -nosalt -base64 -A -K "${recovery_key_password_hex}" -iv "${plainPrivKeyIVHEX}" -in <(echo "${encPrivKeyContentsBASE64}")
+}
+
 #
 # Decrypt the file
 #
@@ -104,7 +117,7 @@ function decryptUserPrivateKey() {
 function decryptFile() {
   oc_user="${1}"
   encFilePath="${2}"
-  plainUserPrivKey="${3}"
+  plain_private_key="${3}"
 
   if [ ! -r "${oc_user}/${encFilePath}" ]; then
     echo "decryptFile():: File '${oc_user}/${encFilePath}' does not exist or not enough permissions! Aborting."
@@ -119,7 +132,7 @@ function decryptFile() {
   userFileShareKeyPath="${oc_user}/files_encryption/keys/${encFilePath}/OC_DEFAULT_MODULE/${oc_user}.shareKey"
   encFileKeyPath="${oc_user}/files_encryption/keys/${encFilePath}/OC_DEFAULT_MODULE/fileKey"
 
-  decUserFileShareKeyHEX="$( openssl rsautl -decrypt -inkey <(echo "${plainUserPrivKey}") -in "${userFileShareKeyPath}" |od -An -tx1 |tr -dc '[:xdigit:]' )"
+  decUserFileShareKeyHEX="$( openssl rsautl -decrypt -inkey <(echo "${plain_private_key}") -in "${userFileShareKeyPath}" |od -An -tx1 |tr -dc '[:xdigit:]' )"
   if [ -z "${decUserFileShareKeyHEX}" ];then echo "decryptFile():: The User Private Key is not good. Are you sure your ownCloud User Login password is correct?"; return 1; fi
 
   decFileKeyContent="$( openssl rc4 -d -in "${encFileKeyPath}" -iv 0 -K "${decUserFileShareKeyHEX}" )"
@@ -163,14 +176,16 @@ if [ ! -r "${oc_user}" ]; then
   exit 1
 fi
 
-if [ -z "${userLoginPass}" ]; then
-  echo "Please set userLoginPass environment variable!"
-  exit 1
-fi
-
 if [ ! -r "${1}" ]; then
   echo "File specified ${1} does not exist or not enough permissions to access it!"
   exit 1
+fi
+
+if [ -z "${recovery_password}" ]; then
+  if [ -z "${userLoginPass}" ]; then
+    echo "Please set userLoginPass environment variable!"
+    exit 1
+  fi
 fi
 
 # Check for available tools installed: openssl, sed, cat, od, tr, mawk
@@ -180,15 +195,19 @@ do
   check_tool "${tool}"
 done
 
-#
-# 1) Locate and decrypt User Private Key
-#
-# TODO: to decrypt User Private Key only once when running this script in a loop (decrypting multiple files)
-plainUserPrivKey="$(decryptUserPrivateKey "${oc_user}" "${userLoginPass}")";
+if [ -n "${userLoginPass}" ]; then
+  #
+  # 1) Locate and decrypt User Private Key
+  #
+  # TODO: to decrypt User Private Key only once when running this script in a loop (decrypting multiple files)
+  plain_private_key="$(decryptUserPrivateKey "${oc_user}" "${userLoginPass}")";
+else
+  plain_private_key="$(decrypt_admin_recovery_key "${recovery_password}")";
+fi
 
 #
 # 2) Decrypt the shareKey, then the fileKey, then the file and output the plaintext
 #
-decryptFile "${oc_user}" "${FILETD}" "${plainUserPrivKey}"
+decryptFile "${oc_user}" "${FILETD}" "${plain_private_key}"
 
 # End of a script
