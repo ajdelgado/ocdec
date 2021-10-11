@@ -144,6 +144,14 @@ function decryptFile() {
   # --- Decrypt the file ---
 }
 
+function check_tool() {
+  tool="${1}"
+  if [ -z "$(whereis "${tool}" | awk '{print($2)}')" ]; then
+    echo "Required tool '${tool}' missing. Please install it."
+    exit 1
+  fi
+}
+
 # Get a username from the path (arg1)
 oc_user="$(echo "${1}" |cut -sd / -f 1)"
 
@@ -165,9 +173,12 @@ if [ ! -r "${1}" ]; then
   exit 1
 fi
 
-#
-# TODO: Add checks for available tools installed: openssl, sed, cat, od, tr, mawk
-#
+# Check for available tools installed: openssl, sed, cat, od, tr, mawk
+tools=(openssl sed cat od tr mawk)
+for tool in "${tools[@]}";
+do
+  check_tool "${tool}"
+done
 
 #
 # 1) Locate and decrypt User Private Key
